@@ -76,7 +76,7 @@ int lcs(string stringA, string stringB, int positionA, int positionB){
 string runMatrix(string stringA, string stringB, int positionA, int positionB){
 	// Local variables
 	// return string
-	string ret = "";
+	string ret;
 	// copy both positions to be able to change them saving the previous result
 	int posA = positionA-1;
 	int posB = positionB-1;
@@ -135,5 +135,5 @@ int main(int argc, char *argv[]) {
 
 	matrix = (int*)malloc((lengthA)*(lengthB)*sizeof(int));
 	std::cout << lcs(stringA, stringB, lengthA,lengthB) << endl;
-	std::cout << runMatrix(stringA, stringB, lengthA-1,lengthB-1) << endl;
+	std::cout << runMatrix(stringA, stringB, lengthA,lengthB) << endl;
 }
