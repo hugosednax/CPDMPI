@@ -7,6 +7,7 @@ using namespace std;
 #include <string.h>
 #include <math.h>
 #include <omp.h>
+#include <fstream>
 
 
 int* matrix;
@@ -115,23 +116,27 @@ string runMatrix(string stringA, string stringB, int positionA, int positionB){
 }
 /* MAIN: PROCESS PARAMETERS */
 int main(int argc, char *argv[]) {
-	//omp_set_num_threads(4);
+	omp_set_num_threads(8);
 	// Local Variables
 	int lengthA = 0;
 	int lengthB = 0;
 	string final = "";
-	string stringA = "";
-	string stringB = "";
-	// Scan input for lengths - ignored for optimization reasons
-	getline(std::cin,stringA);
+	string filename = argv[1];
+	string stringA;
+	string stringB;
+
+	// Create stream to read the file content
+	std::ifstream infile(filename.c_str());
+
+	// Scan input for lengths
+	infile >> lengthA >> lengthB;
+
 
 	// Scan input for the strings
-	getline(std::cin,stringA);
-	getline(std::cin,stringB);
-
-	// Get the length of the strings
-	lengthA = stringA.length();
-	lengthB = stringB.length();
+	// 1st get line to read the \n
+	getline(infile, stringA);
+	getline(infile,stringA);
+	getline(infile,stringB);
 
 	matrix = (int*)malloc((lengthA)*(lengthB)*sizeof(int));
 	std::cout << lcs(stringA, stringB, lengthA,lengthB) << endl;
