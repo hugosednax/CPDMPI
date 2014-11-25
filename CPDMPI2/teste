@@ -1,0 +1,284 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+#include <math.h>
+ 
+ /************************************************************
+  *  
+  * 
+  * 
+  * ************************************************************/
+void printCurrentProcess(int* coords, int* initialPositions, int* finalPositions, int id){
+	std::cout << "Process " << id << " starts running matrix block " << coords[0] << "," << coords[1]
+		<< " with real values " << initialPositions[0] << "," << initialPositions[1] << " to "
+		<< finalPositions[0] << "," << finalPositions[1] << "." << std::endl;
+
+}
+
+int main(int argc,char **argv)
+{
+ 	int id, num_procs;
+	int i;
+	int n = 20; int m = 22;
+	MPI_Comm cart_comm;
+	MPI_Status status;
+	int initialPositions[2]; // n x m, a x b
+	int finalPositions[2]; //n x m , a x b
+	
+	MPI_Init(&argc,&argv);
+	MPI_Comm_size(MPI_COMM_WORLD,&num_procs);
+	MPI_Comm_rank(MPI_COMM_WORLD,&id);
+			   
+	int dim[2];
+	int periodic[2];
+	int coords[2];
+
+	memset(dim, 0, 2*sizeof(int));
+	memset(periodic, 0, 2*sizeof(int));
+	memset(coords, 0, 2*sizeof(int));
+
+	MPI_Dims_create(num_procs, 2, dim);
+	//Create Comunication
+	MPI_Cart_create(MPI_COMM_WORLD, 2, dim, periodic, 1, &cart_comm);
+	
+	//std::cout << dim[0] << dim[1] << std::endl;
+
+	// Check for coordinates
+	MPI_Cart_coords(cart_comm, id, 2, coords);
+	// Calculate real coordinates
+	initialPositions[0] = coords[0]*(n/dim[0]);
+	initialPositions[1] = coords[1]*(m/dim[1]);
+	finalPositions[0] = ((coords[0]+1)*(n/dim[0]))-1;
+	finalPositions[1] = ((coords[1]+1)*(m/dim[1]))-1;
+	if(finalPositions[0] > n-1) finalPositions[0] = n;
+	if(finalPositions[1] > m-1) finalPositions[1] = m;
+
+	// Initialize local values to each process
+	int maxRow = finalPositions[0] - initialPositions[0];
+	int maxCollumn = finalPositions[1] - initialPositions[1];
+	int dependencies = maxRow + maxCollumn + 1;
+	int matrix[maxRow][maxCollumn];
+
+	// Check if this process controls the 1st matrix block
+	if(coords[0]==0 && coords[1]==0){
+		printCurrentProcess(coords, initialPositions, finalPositions, id);
+		//run matrix
+		
+		//create both dependency lists
+		int dependencyListSide[dependencies];
+		int dependencyListBot[dependencies];
+
+		//fill list
+		
+		// set zeros
+		for(int i = 0; i<dependencies/2+1; i++)
+			dependencyListSide[i]=0;
+		for(int i=dependencies/2+1; i<dependencies; i++)
+			dependencyListBot[i]=0;
+		dependencyListBot[0]=0;
+
+		// create destinations links and send data
+		int destinationId1, destinationId2;
+
+		// send to 1st son
+		int destinationCoords[2];
+		destinationCoords[0] = 0;
+		destinationCoords[1] = 1;
+		
+		MPI_Cart_rank(cart_comm, destinationCoords, &destinationId1); 
+		MPI_Send(dependencyListSide, dependencies, MPI_INT, destinationId1, destinationId1, MPI_COMM_WORLD);
+
+		// send to 2nd son
+		destinationCoords[0] = 1;
+		destinationCoords[1] = 0;
+		
+		MPI_Cart_rank(cart_comm, destinationCoords, &destinationId2);
+		MPI_Send(dependencyListBot, dependencies, MPI_INT, destinationId2, destinationId2, MPI_COMM_WORLD);
+		
+	} else{
+		// is this matrix block in the first row or first collumn?
+		if(coords[0]==0){ // matrix block in the first row
+			int dependencyList[dependencies];
+
+			int sourceCoords[2];
+			sourceCoords[0] = coords[0];
+			sourceCoords[1] = coords[1] - 1;
+
+			printCurrentProcess(coords, initialPositions, finalPositions, id);
+
+			int sourceId;
+			MPI_Cart_rank(cart_comm, sourceCoords, &sourceId);
+
+
+			std::cout << "Process " << id << " is wainting message from process " << sourceId << " with length " << dependencies << std::endl << std::flush;
+			MPI_Recv(dependencyList, dependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
+			std::cout << "Process " << id << " received message from process " << sourceId << std::endl << std::flush;
+			
+			//run function matrix(...) TODO
+
+			// create destinations links and send data
+			int destinationId1, destinationId2;
+
+			int dependencyListBot[dependencies];
+			int dependencyListSide[dependencies/2];
+
+			dependencyListBot[0] = 0;
+			for(int i = 1; i<dependencies/2+1; i++){
+				dependencyListBot[i]=matrix[i-1][maxCollumn-1];
+			}
+			for(int i = dependencies/2+1; i < dependencies; i++){
+				dependencyListBot[i]=0;
+			}
+
+			for(int i = 0; i<dependencies/2; i++){
+				dependencyListSide[i]=matrix[maxRow-1][i];
+			}
+
+			int destinationCoords[2];
+
+			// send to 1st son
+			if(coords[1]+1 < dim[1]){
+				destinationCoords[0] = coords[0];
+				destinationCoords[1] = coords[1] + 1;
+		
+				MPI_Cart_rank(cart_comm, destinationCoords, &destinationId1);
+				std::cout << "Process " << id << " sent message to process " << destinationId1 << " with length " << dependencies << std::endl << std::flush;
+				MPI_Send(dependencyListSide, dependencies, MPI_INT, destinationId1, destinationId1, MPI_COMM_WORLD);
+			}
+
+			// send to 2nd son
+			destinationCoords[0] = coords[0] + 1;
+			destinationCoords[1] = coords[1];
+		
+			MPI_Cart_rank(cart_comm, destinationCoords, &destinationId2);
+			std::cout << "Process " << id << " sent message to process " << destinationId2 << " with length " << dependencies/2+1 << std::endl << std::flush;
+			MPI_Send(dependencyListBot, dependencies/2 + 1, MPI_INT, destinationId2, destinationId2, MPI_COMM_WORLD);
+
+		} else if(coords[1]==0){ //matrix block in the first collumn 
+			int dependencyList[dependencies];
+
+			int sourceCoords[2];
+			sourceCoords[0] = coords[0]-1;
+			sourceCoords[1] = 0;
+
+			printCurrentProcess(coords, initialPositions, finalPositions, id);
+
+			int sourceId;
+			MPI_Cart_rank(cart_comm, sourceCoords, &sourceId);
+
+			std::cout << "Process " << id << " is wainting message from process " << sourceId << " with length " << dependencies << std::endl << std::flush;
+			MPI_Recv(dependencyList, dependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
+			std::cout << "Process " << id << " received message from process " << sourceId << std::endl << std::flush;
+
+			//run function matrix(...) TODO
+
+			// create destinations links and send data
+			int destinationId1, destinationId2;
+
+			int dependencyListSide[dependencies];
+			int dependencyListBot[dependencies/2 + 1];
+
+			for(int i = 0; i < dependencies/2 + 1; i++){
+				dependencyListSide[i]= 0;
+			}
+			for(int i = dependencies/2 + 1; i < dependencies; i++){
+				dependencyListSide[i]=matrix[maxRow-1][i-(dependencies/2 + 1)];
+			}
+
+			dependencyListBot[0] = dependencyList[dependencies-1];
+			for(int i = 1; i<dependencies/2 + 1; i++){
+				dependencyListBot[i]=matrix[i-1][maxCollumn-1];
+			}
+
+			// send to 1st son - Bot
+			int destinationCoords[2];
+			destinationCoords[0] = coords[0];
+			destinationCoords[1] = coords[1] + 1;
+		
+			MPI_Cart_rank(cart_comm, destinationCoords, &destinationId1);
+			std::cout << "Process " << id << " sent message to process " << destinationId1 << " with length " << dependencies/2 + 1 << std::endl << std::flush;
+			MPI_Send(dependencyListBot, dependencies/2 + 1, MPI_INT, destinationId1, destinationId1, MPI_COMM_WORLD);
+
+			// send to 2nd son - Bot
+			if(coords[0]+1 < dim[0]){
+				destinationCoords[0] = coords[0] + 1;
+				destinationCoords[1] = coords[1];
+
+				MPI_Cart_rank(cart_comm, destinationCoords, &destinationId2);
+				std::cout << "Process " << id << " sent message to process " << destinationId2 << " with length " << dependencies << std::endl << std::flush;
+				MPI_Send(dependencyListSide, dependencies, MPI_INT, destinationId2, destinationId2, MPI_COMM_WORLD);
+			}
+
+		} else{
+			int sourceCoordsTop[2];
+			int sourceCoordsSide[2];
+
+			sourceCoordsTop[0] = coords[0]; 
+			sourceCoordsTop[1] = coords[1] - 1;
+			sourceCoordsSide[0] = coords[0] - 1;
+			sourceCoordsSide[1] = coords[1];
+
+			printCurrentProcess(coords, initialPositions, finalPositions, id);
+
+			int sourceIdTop, sourceIdSide;
+			MPI_Cart_rank(cart_comm, sourceCoordsTop, &sourceIdTop);
+			MPI_Cart_rank(cart_comm, sourceCoordsSide, &sourceIdSide);
+
+			int dependencyListSide[dependencies/2];
+			int dependencyListTop[dependencies/2 + 1];
+			std::cout << "Process " << id << " is wainting message from process " << sourceIdSide << " with length " << dependencies/2 << std::endl << std::flush;
+			MPI_Recv(dependencyListSide, dependencies/2, MPI_INT, sourceIdSide, id, MPI_COMM_WORLD, &status);
+			std::cout << "Process " << id << " received message from process " << sourceIdSide << std::endl << std::flush;
+
+			std::cout << "Process " << id << " is wainting message from process " << sourceIdTop << " with length " << dependencies/2 + 1 << std::endl << std::flush;
+			MPI_Recv(dependencyListTop, dependencies/2 + 1, MPI_INT, sourceIdTop, id, MPI_COMM_WORLD, &status);
+			std::cout << "Process " << id << " received message from process " << sourceIdTop << std::endl << std::flush;
+			
+			int dependencyList[dependencies];
+
+			for(int i = 0; i<dependencies/2; i++){
+				dependencyList[i] = dependencyListTop[i];
+			}
+			for(int i = dependencies/2+1; i < dependencies; i++){
+				dependencyList[i] = dependencyListSide[i - (dependencies/2+1)];
+			}
+			
+			// create destinations links and send data
+			int destinationId1, destinationId2;
+
+			for(int i = 0; i < dependencies/2; i++){
+				dependencyListSide[i]= matrix[maxRow-1][i];
+			}
+
+			int dependencyListBot[dependencies/2+1];
+			dependencyListBot[0] = dependencyList[dependencies];
+			for(int i = 1; i<dependencies/2+1; i++){
+				dependencyListBot[i]=matrix[i-1][maxCollumn-1];
+			}
+
+
+			// send to 1st son - Side
+			int destinationCoords[2];
+			destinationCoords[0] = coords[0] + 1;
+			destinationCoords[1] = coords[1];
+		
+			MPI_Cart_rank(cart_comm, destinationCoords, &destinationId1);
+			std::cout << "Process " << id << " sent message to process " << destinationId1 << " with length " << dependencies/2 << std::endl  << std::flush;
+			MPI_Send(dependencyListSide, dependencies/2, MPI_INT, destinationId1, destinationId1, MPI_COMM_WORLD);
+
+			// send to 2nd son - Bot
+			destinationCoords[0] = coords[0];
+			destinationCoords[1] = coords[1] + 1;
+
+			MPI_Cart_rank(cart_comm, destinationCoords, &destinationId2);
+			std::cout << "Process " << id << " sent message to process " << destinationId2 << " with length " << dependencies/2 + 1 << std::endl << std::flush;
+			MPI_Send(dependencyListBot, dependencies/2 + 1, MPI_INT, destinationId2, destinationId2, MPI_COMM_WORLD);
+
+			if(coords[0]==dim[0]-1 && coords[1]==dim[1]-1)
+				std::cout << "last block" << std::endl;
+		}
+	}
+
+	MPI_Finalize();
+	return 0;
+}
