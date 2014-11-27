@@ -16,6 +16,43 @@ inline int getIndex(unsigned int x, unsigned int y, unsigned int width){
 	return y*width+x;
 }
 
+ void readInputFile(std::string inputFileName, int pos1[2], int pos2[2], 
+		     std::string* outputString1, std::string* outputString2){
+  std::ifstream infile(inputFileName.c_str());
+    char c;
+    int counter = 0;
+    //ignoring first line
+    while(c!='\n'){
+      infile.get(c);
+    }
+
+    //ignoring chars until initial position of first string
+    while(counter < pos1[0]){
+      infile.get(c);
+      counter++;
+    }
+    //pushing back chars to string1
+    for(int i=0; i < pos1[1] - pos1[0]; i++){
+      infile.get(c);
+      outputString1->push_back(c);
+            infile.get(c);
+    }
+    counter=0;
+    //ignoring chars until first position of second string
+    while(counter < pos2[0]){
+      infile.get(c);
+      counter++;
+    }
+    //pushing back chars to string2
+    for(int i=0; i < pos2[1] - pos2[0]; i++){
+      infile.get(c);
+      outputString2->push_back(c);
+    }   
+    infile.close();
+  }
+
+
+
 // Cost function gave in the Project Assignment
 short cost(int x) {
 	int i, n_iter = 20;
