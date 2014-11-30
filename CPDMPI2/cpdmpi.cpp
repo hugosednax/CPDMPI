@@ -10,8 +10,13 @@ using namespace std;
 #include <fstream>
 #include <mpi.h>
 
+// Debug flag controllers
 #define DEBUG 0
+#define VALUE_DEBUG 0
 
+// Functions Definitions
+
+// Translate a point (x,y) into a single value to access matrix block
 inline int getIndex(unsigned int x, unsigned int y, unsigned int width){
 	return y*width+x;
 }
@@ -25,60 +30,33 @@ short cost(int x) {
 	return (short) (dcost / n_iter + 0.1);
 }
 
-/*
-int lcs(string stringA, string stringB, int positionA, int positionB){
-	int maxi = 0;
-	int unsigned lengthA = stringA.length();
-	int unsigned lengthB = stringB.length();
-	for(unsigned int i=0; i<lengthB; i++){
-	  //#pragma omp parallel for shared(matrix)
-	  for(int unsigned j=0; j<min((unsigned int)i+1,lengthA); j++){
-			unsigned int x = j;
-			unsigned int y = i - j;
-			if(stringA[x] == stringB[y]){
-				if(x == 0 || y == 0)
-					matrix[getIndex(x,y,positionA)] = 1;
-				else matrix[getIndex(x,y,positionA)] = matrix[getIndex(x-1,y-1,positionA)] + cost(1);
-			} else if(x == 0 && (y == 0)) matrix[getIndex(x,y,positionA)] = 0;
-			else if(x==0)
-				matrix[getIndex(x,y,positionA)] = matrix[getIndex(x,y-1,positionA)];
-			else if(y==0)
-				matrix[getIndex(x,y,positionA)] = matrix[getIndex(x-1,y,positionA)];
-			else matrix[getIndex(x,y,positionA)] = std::max(matrix[getIndex(x-1,y,positionA)], matrix[getIndex(x,y-1,positionA)]);
-
-			if(matrix[getIndex(x,y,positionA)]>maxi) maxi = matrix[getIndex(x,y,positionA)];
+// Routine that prints out a matrix with arbitrary size
+void printMatrix(int* matrix, int maxColumn, int maxRow, int id){
+	std::cout << "Matrix from process " << id << " with maxColumn: " << maxColumn << " and maxRow " << maxRow << std::endl;
+	for(int row = 0; row < maxRow; row++){
+		std::cout << "| ";
+		for(int column = 0; column < maxColumn; column++){
+			std::cout << matrix[getIndex(column, row, maxColumn)] << "  ";
 		}
+		std::cout << "|" << std::endl;
 	}
-
-	for(int i=1; i<lengthA; i++){
-		unsigned int lim = lengthA - i;
-		lim = min(lim, lengthB);
-		//#pragma omp parallel for shared(matrix)
-		for(int j=0; j < lim; j++){
-			int x = i + j;
-			int y = lengthB - j - 1;
-			if(stringA[x] == stringB[y]){
-				if(x == 0 || (y == 0))
-					matrix[getIndex(x,y,positionA)] = 1;
-				else matrix[getIndex(x,y,positionA)] = matrix[getIndex(x-1,y-1,positionA)] + cost(1);
-			} else if(x == 0 && y == 0) matrix[getIndex(x,y,positionA)] = 0;
-			else if(x==0)
-				matrix[getIndex(x,y,positionA)] = matrix[getIndex(x,y-1,positionA)];
-			else if(y==0)
-				matrix[getIndex(x,y,positionA)] = matrix[getIndex(x-1,y,positionA)];
-			else matrix[getIndex(x,y,positionA)] = std::max(matrix[getIndex(x-1,y,positionA)], matrix[getIndex(x,y-1,positionA)]);
-
-			if(matrix[getIndex(x,y,positionA)]>maxi) maxi = matrix[getIndex(x,y,positionA)];
-		}
-	}
-	return maxi;
 }
-*/
 
+// Routine that prints Dependencies List with arbitrary size
+void printDependencyList(int* dependencyList, int size, int id){
+	std::cout << "Dependency list of process " << id << std::endl;
+	for(int i = 0; i < size; i++)
+		std::cout << dependencyList[i] << " ";
+	std::cout << std::endl;
+}
+
+// LCS algorithm, returns a matrix[stringA.size()*stringB.size()]
 int* computeMatrixBlock (string stringA, string stringB, int* dependencyList){
 	int unsigned lengthA = stringA.length();
 	int unsigned lengthB = stringB.length();
+
 	int* matrix = (int*)malloc((lengthA)*(lengthB)*sizeof(int));
+	memset(matrix, 0 , (lengthA)*(lengthB)*sizeof(int));
 
 	for(unsigned int i=0; i<lengthB; i++){
 	  //#pragma omp parallel for shared(matrix)
@@ -100,9 +78,9 @@ int* computeMatrixBlock (string stringA, string stringB, int* dependencyList){
 				if(x == 0 && (y == 0)){
 					matrix[getIndex(x,y,lengthA)] = max(dependencyList[1],dependencyList[lengthA+1]);
 				} else if(x==0){
-					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x,y-1,lengthA)], dependencyList[lengthA+y]);
+					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x,y-1,lengthA)], dependencyList[lengthA+y+1]);
 				}else if(y==0){
-					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x-1,y,lengthA)], dependencyList[x]);
+					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x-1,y,lengthA)], dependencyList[x+1]);
 				}else {
 					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x-1,y,lengthA)], matrix[getIndex(x,y-1,lengthA)]);
 				}
@@ -132,9 +110,9 @@ int* computeMatrixBlock (string stringA, string stringB, int* dependencyList){
 				if(x == 0 && (y == 0)){
 					matrix[getIndex(x,y,lengthA)] = max(dependencyList[1],dependencyList[lengthA+1]);
 				} else if(x==0){
-					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x,y-1,lengthA)], dependencyList[lengthA+y]);
+					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x,y-1,lengthA)], dependencyList[lengthA+y+1]);
 				}else if(y==0){
-					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x-1,y,lengthA)], dependencyList[x]);
+					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x-1,y,lengthA)], dependencyList[x+1]);
 				}else {
 					matrix[getIndex(x,y,lengthA)] = max(matrix[getIndex(x-1,y,lengthA)], matrix[getIndex(x,y-1,lengthA)]);
 				}
@@ -145,12 +123,14 @@ int* computeMatrixBlock (string stringA, string stringB, int* dependencyList){
 	return matrix;
 }
 
+// Routine that prints the status of the current Process, as his matrix block coordinates and real coordinates
 void printCurrentProcess(int* coords, int* initialPositions, int* finalPositions, int id){
 	std::cout << "Process " << id << " starts running matrix block " << coords[0] << "," << coords[1]
 	<< " with real values " << initialPositions[0] << "," << initialPositions[1] << " to "
 	<< finalPositions[0] << "," << finalPositions[1] << "." << std::endl;
 }
 
+// Function that read the content of a file and returns outputString1 and outputString2 from de positions
 void readInputFile(std::string inputFileName, int pos1[2], int pos2[2], std::string* outputString1, std::string* outputString2){
 	std::ifstream infile(inputFileName.c_str());
 	char c;
@@ -159,32 +139,34 @@ void readInputFile(std::string inputFileName, int pos1[2], int pos2[2], std::str
 	while(c!='\n'){
 		infile.get(c);
 	}
-
     //ignoring chars until initial position of first string
 	while(counter < pos1[0]){
 		infile.get(c);
 		counter++;
 	}
     //pushing back chars to string1
-	for(int i=0; i < pos1[1] - pos1[0]; i++){
+	for(int i=0; i < pos2[0] - pos1[0] + 1; i++){
 		infile.get(c);
 		outputString1->push_back(c);
-		infile.get(c);
 	}
 	counter=0;
+	while(c!='\n'){
+		infile.get(c);
+	}
     //ignoring chars until first position of second string
-	while(counter < pos2[0]){
+	while(counter < pos1[1]){
 		infile.get(c);
 		counter++;
 	}
     //pushing back chars to string2
-	for(int i=0; i < pos2[1] - pos2[0]; i++){
+	for(int i=0; i < pos2[1] - pos1[1] + 1; i++){
 		infile.get(c);
 		outputString2->push_back(c);
 	}
 	infile.close();
 }
 
+// Return the real values matrix dimension for a specific matrix block (targetCoords)
 void getTargetDimension(int* targetCoords, int* dim, int lengthA, int lengthB, int* targetColumns, int* targetRows){
 	int initialPositions[2];
 	int finalPositions[2];
@@ -192,27 +174,18 @@ void getTargetDimension(int* targetCoords, int* dim, int lengthA, int lengthB, i
 	initialPositions[1] = targetCoords[1]*(lengthB/dim[1]);
 	finalPositions[0] = ((targetCoords[0]+1)*(lengthA/dim[0]))-1;
 	finalPositions[1] = ((targetCoords[1]+1)*(lengthB/dim[1]))-1;
-	if(finalPositions[0] > lengthA-1) finalPositions[0] = lengthA;
-	if(finalPositions[1] > lengthB-1) finalPositions[1] = lengthB;
-	*targetColumns = finalPositions[0] - initialPositions[0];
-	*targetRows = finalPositions[1] - initialPositions[1];
+	if(targetCoords[0] == dim[0]-1) finalPositions[0] = lengthA-1;
+	if(targetCoords[1] == dim[1]-1) finalPositions[1] = lengthB-1;
+	*targetColumns = finalPositions[0] - initialPositions[0] + 1;
+	*targetRows = finalPositions[1] - initialPositions[1] + 1;
 	return;
 }
 
+// Routine that deals with the comunication between processes and set the values to run the LCS algorithm (computeMatrixBlock function)
 void routineMPI(string filename, int n, int m){
 
 	string stringA = "";
 	string stringB = "";
-
-	// Initialize MPI
-	int id, num_procs;
-	// write number of processes in num_procs
-	MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-	// write the current process identifier in id
-	MPI_Comm_rank(MPI_COMM_WORLD, &id);
-
-	MPI_Comm cart_comm;
-	MPI_Status status;
 
 	int initialPositions[2];
 	int finalPositions[2];
@@ -223,6 +196,15 @@ void routineMPI(string filename, int n, int m){
 	memset(dim, 0, 2*sizeof(int));
 	memset(periodic, 0, 2*sizeof(int));
 	memset(coords, 0, 2*sizeof(int));
+
+	// Initialize MPI
+	int id, num_procs;
+	// write number of processes in num_procs
+	MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+	// write the current process identifier in id
+	MPI_Comm_rank(MPI_COMM_WORLD, &id);
+	MPI_Comm cart_comm;
+	MPI_Status status;
 
 	MPI_Dims_create(num_procs, 2, dim);
 	//Create Comunication
@@ -237,21 +219,29 @@ void routineMPI(string filename, int n, int m){
 	initialPositions[1] = coords[1]*(m/dim[1]);
 	finalPositions[0] = ((coords[0]+1)*(n/dim[0]))-1;
 	finalPositions[1] = ((coords[1]+1)*(m/dim[1]))-1;
-	if(finalPositions[0] > n-1) finalPositions[0] = n;
-	if(finalPositions[1] > m-1) finalPositions[1] = m;
+	if(coords[0] == dim[0]-1) finalPositions[0] = n-1;
+	if(coords[1] == dim[1]-1) finalPositions[1] = m-1;
 
 	// Initialize local values to each process
-	int maxColumn = finalPositions[0] - initialPositions[0];
-	int maxRow = finalPositions[1] - initialPositions[1];
+	int maxColumn = finalPositions[0] - initialPositions[0] + 1;
+	int maxRow = finalPositions[1] - initialPositions[1] + 1;
 	int dependencies = maxColumn + maxRow + 1;
 
 	// Matrix declaration
 	int* matrix;
 
+	// get strings for the current block
 	readInputFile(filename, initialPositions, finalPositions, &stringA, &stringB);
 
-	if(coords[0]==0 && coords[1]==0){
+
+	if(coords[0]==0 && coords[1]==0){ // Matrix Block 0,0 - initial block
 		if(DEBUG) printCurrentProcess(coords, initialPositions, finalPositions, id);
+
+		int dependencyList[dependencies];
+		memset(dependencyList, 0, dependencies*sizeof(int));
+
+ 		matrix = computeMatrixBlock (stringA, stringB, dependencyList);
+		if(VALUE_DEBUG) printMatrix(matrix, maxColumn, maxRow, id);
 
 		if(dim[0] > 1){
 			int targetSideCoords[2];
@@ -269,8 +259,8 @@ void routineMPI(string filename, int n, int m){
 		// set dependencies of Side block
 			for(int i = 0; i<targetSideColumns+1; i++)
 				dependencyListSide[i]=0;
-			for(int i = targetSideColumns+1; i< dependencyListSideSize; i++)
-				dependencyListSide[i]=matrix[getIndex(maxColumn-1,i-targetSideColumns+1, maxColumn)];
+			for(int i = targetSideColumns+1; i < dependencyListSideSize; i++)
+				dependencyListSide[i]=matrix[getIndex(maxColumn-1,i-(targetSideColumns+1), maxColumn)];
 
 		// send to side
 			MPI_Cart_rank(cart_comm, targetSideCoords, &targetSideId);
@@ -304,6 +294,10 @@ void routineMPI(string filename, int n, int m){
 			MPI_Send(dependencyListBot, dependencyListBotSize, MPI_INT, targetBotId, targetBotId, MPI_COMM_WORLD);
 			if(DEBUG) std::cout << "Process " << id << " sent message to process " << targetBotId << " with length " << dependencyListBotSize << " with tag " << targetBotId << std::endl << std::flush;
 		}
+
+		if(coords[0]==dim[0]-1 && coords[1]==dim[1]-1)
+				std::cout << matrix[getIndex(maxColumn-1, maxRow-1, maxColumn)] << std::endl;
+
 	} else{
 		// is this matrix block in the first column or first row?
 		if(coords[0]==0){ // matrix block in the first column
@@ -323,7 +317,9 @@ void routineMPI(string filename, int n, int m){
 			MPI_Recv(dependencyList, myDependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
 			if(DEBUG) std::cout << "Process " << id << " received message from process " << sourceId << std::endl << std::flush;
 
-			//run function matrix(...) TODO
+			if(VALUE_DEBUG) printDependencyList(dependencyList, myDependencies, id);
+			matrix = computeMatrixBlock (stringA, stringB, dependencyList);
+			if(VALUE_DEBUG) printMatrix(matrix, maxColumn, maxRow, id);
 
 			// send to bot block
 			if(coords[1] < dim[1]-1){
@@ -393,7 +389,10 @@ void routineMPI(string filename, int n, int m){
 			MPI_Recv(dependencyList, myDependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
 			if(DEBUG) std::cout << "Process " << id << " received message from process " << sourceId << std::endl << std::flush;
 
-			//run function matrix(...) TODO
+			if(VALUE_DEBUG)printDependencyList(dependencyList, myDependencies, id);
+			matrix = computeMatrixBlock (stringA, stringB, dependencyList);
+			if(VALUE_DEBUG)printMatrix(matrix, maxColumn, maxRow, id);
+
 			if(coords[1] < dim[1]-1){
 			// create destinations links and send data
 				int targetBotCoords[2];
@@ -443,6 +442,9 @@ void routineMPI(string filename, int n, int m){
 				MPI_Send(dependencyListSide, dependencyListSideSize, MPI_INT, targetSideId, targetSideId, MPI_COMM_WORLD);
 			}
 
+			if(coords[0]==dim[0]-1 && coords[1]==dim[1]-1)
+				std::cout << matrix[getIndex(maxColumn-1, maxRow-1, maxColumn)] << std::endl;
+
 		} else{
 			int myDependencies = maxColumn + maxRow + 1;
 			int myDependencyList[myDependencies];
@@ -480,6 +482,9 @@ void routineMPI(string filename, int n, int m){
 				myDependencyList[i] = myDependencyListSide[i - (maxColumn+1)];
 			}
 
+			if(VALUE_DEBUG) printDependencyList(myDependencyList, myDependencies, id);
+			matrix = computeMatrixBlock (stringA, stringB, myDependencyList);
+			if(VALUE_DEBUG) printMatrix(matrix, maxColumn, maxRow, id);
 
 			if(coords[0] < dim[0]-1){
 				int targetSideCoords[2];
@@ -529,7 +534,7 @@ void routineMPI(string filename, int n, int m){
 			}
 
 			if(coords[0]==dim[0]-1 && coords[1]==dim[1]-1)
-				std::cout << "last block" << std::endl;
+				std::cout << matrix[getIndex(maxColumn-1, maxRow-1, maxColumn)] << std::endl;
 		}
 	}
 }
