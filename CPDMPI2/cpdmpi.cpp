@@ -181,6 +181,120 @@ void getTargetDimension(int* targetCoords, int* dim, int lengthA, int lengthB, i
 	return;
 }
 
+void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, int positionB, MPI_Comm cart_comm, int coords[2], int totalLengthA, int totalLengthB, int dim[2], string *pathString){
+	int posA = positionA-1;
+	int posB = positionB-1;
+	int destinationCoords[2];
+	int destinationId;
+	int localMatrixCoords[2]; // traduzir local de um bloco para o outro
+	int destMatrixCoords[2];
+	int garbageStuff;
+	
+	while(posA >= 0 && posB >= 0){
+		localMatrixCoords[0] = posA;
+		localMatrixCoords[1] = posB;
+			// if the chars match decrement both positions and add the char to the ret string
+		if(stringA[posA] == stringB[posB]){
+			*pathString = stringA[posA] + *pathString;
+				if(posA == 0 && posB == 0){ //mandar para o bloco diagonal
+					destinationCoords[0] = coords[0]-1;
+					destinationCoords[1] = coords[1]-1;
+					MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+					getTargetDimension(destinationCoords, dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &(destMatrixCoords[1]));
+					MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
+					MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+				}else{
+					if(posA == 0){ //mandar para o bloco da esquerda na diagonal
+						destinationCoords[0] = coords[0];
+						destinationCoords[1] = coords[1]-1;
+						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+						getTargetDimension(destinationCoords, dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &garbageStuff);
+						destMatrixCoords[1]=localMatrixCoords[1]-1;
+						MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
+						MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+					}else if(posB == 0){ //mandar para o bloco de cima na diagonal
+						destinationCoords[0] = coords[0]-1;
+						destinationCoords[1] = coords[1];
+						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+						destMatrixCoords[0]=localMatrixCoords[0]-1;
+						getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &garbageStuff, &(destMatrixCoords[1]));
+						MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+						MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+					}else{
+						posA--;
+						posB--;
+					}
+				}
+		  
+		}else{
+				if(coords[0]==0 && coords[1]==0){	//se estiver no bloco canto superior esquerdo
+					if(posA==0 && posB==0)
+						break;
+					else if(posA==0)
+						posB--;
+					else if(posB==0)
+						posA--;
+					else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
+						posA--;
+					else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
+						posB--;
+				}else if(coords[0]==0 || coords[1]==0){ //se estiver ou na linha ou na coluna de blocos limite
+					if(coords[0]==0){ //linha dos blocos mais a cima de todos
+						if(posB==0)
+							posA--;
+						else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
+							posA--;
+						else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
+							posB--;
+					}
+					if(coords[1]==0){ //coluna dos blocos mais a esquerda de todos
+						if(posA==0)
+							posB--;
+						else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
+							posA--;
+						else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
+							posB--;
+					}
+				}else{	//caso seja um bloco que esteja no interior da matriz de blocos
+					if(posA==0){	//caso esteja na coluna limite esquerda da matriz local
+						destinationCoords[0] = coords[0];
+						destinationCoords[1] = coords[1]-1;
+						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+						getTargetDimension(destinationCoords, dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &garbageStuff);
+						destMatrixCoords[1]=localMatrixCoords[1];
+						MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
+						MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+					}else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
+					posA--;
+					else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
+						posB--;
+				}
+			}
+		}// ends while loop
+	}
+
+
+	string runMatrix(int* matrix, int dim[2], string stringA, string stringB, int positionA, int positionB, MPI_Comm cart_comm, int totalLengthA, int totalLengthB, int* coords){
+	// Local variables
+	// return string
+		int id;
+		MPI_Status status;
+		int buf[2];
+		string pathString = "";
+	// body
+	// while the positions are in range
+		if(coords[0] == dim[0]-1 && coords[1] == dim[1]-1){
+		  runLocalMatrix(matrix, stringA, stringB, positionA, positionB, cart_comm, coords, totalLengthA, totalLengthB, dim, &pathString);
+		}else{
+		  MPI_Recv(buf,2,MPI_INT,MPI_ANY_SOURCE,MPI_ANY_TAG,MPI_COMM_WORLD,&status); //CHANGE TAG
+		  char pathString2[min(totalLengthA,totalLengthB)];
+		  MPI_Recv(pathString2, min(totalLengthA,totalLengthB), MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status); 
+		  pathString = string(pathString2);
+		  runLocalMatrix(matrix, stringA, stringB, positionA, positionB, cart_comm, coords, totalLengthA, totalLengthB, dim, &pathString);
+	}
+	// return ret string
+	return pathString;
+}
 // Routine that deals with the comunication between processes and set the values to run the LCS algorithm (computeMatrixBlock function)
 void routineMPI(string filename, int n, int m){
 
@@ -536,123 +650,14 @@ void routineMPI(string filename, int n, int m){
 			if(coords[0]==dim[0]-1 && coords[1]==dim[1]-1)
 				std::cout << matrix[getIndex(maxColumn-1, maxRow-1, maxColumn)] << std::endl;
 		}
+		string str = runMatrix(matrix, dim, stringA, stringB, maxColumn, maxRow, cart_comm, n, m, coords); //JUST IN CASE BLAME TEIXEIRA... IF ANY ERROR ITS PROBABLY HERE
+		//if(coords[0]==0 && coords[1]==0){
+			cout<<str<<endl;
+			//}
 	}
 }
 
-/*
-void runLocalMatrix(string stringA, string stringB, int positionA, int positionB, MPI_Comm cart_comm, int coords[2], string* ret){
-	int posA = positionA-1;
-	int posB = positionB-1;
-	int destinationCoords[2];
-	int destinationId;
-	int localMatrixCoords[2]; // traduzir local de um bloco para o outro
-	int destMatrixCoords[2];
 
-	while(posA >= 0 && posB >= 0){
-		localMatrixCoords[0] = posA;
-		localMatrixCoords[1] = posB;
-			// if the chars match decrement both positions and add the char to the ret string
-		if(stringA[posA] == stringB[posB]){
-			*ret = stringA[posA] + *ret;
-				if(posA == 0 && posB == 0){ //mandar para o bloco diagonal
-					destinationCoords[0] = coords[0]-1;
-					destinationCoords[1] = coords[1]-1;
-					MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
-						destMatrixCoords[0]=//maxTamanho de colunas da matriz destino
-						destMatrixCoords[1]=//maxTamanho de colunas da matriz destino
-						MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
-						//MPI_Send(ret, ret.length(), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
-					}else{
-					if(posA == 0){ //mandar para o bloco da esquerda na diagonal
-						destinationCoords[0] = coords[0];
-						destinationCoords[1] = coords[1]-1;
-						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
-						destMatrixCoords[0]=//maxTamanho de colunas da matriz destino
-						destMatrixCoords[1]=localMatrixCoords[1]-1;
-						MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
-						//MPI_Send(ret, ret.length(), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
-					}else if(posB == 0){ //mandar para o bloco de cima na diagonal
-						destinationCoords[0] = coords[0]-1;
-						destinationCoords[1] = coords[1];
-						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
-						destMatrixCoords[0]=localMatrixCoords[0]-1;
-						destMatrixCoords[1]=//maxTamanho de linhas da matriz destino
-						MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
-						//MPI_Send(ret,ret.length() , MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
-					}else{
-						posA--;
-						posB--;
-					}
-				}
-			} else{
-				if(coords[0]==0 && coords[1]==0){	//se estiver no bloco canto superior esquerdo
-					if(posA==0 && posB==0)
-						break;
-					else if(posA==0)
-						posB--;
-					else if(posB==0)
-						posA--;
-					else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
-						posA--;
-					else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
-						posB--;
-				}else if(coords[0]==0 || coords[1]==0){ //se estiver ou na linha ou na coluna de blocos limite
-					if(coords[0]==0){ //linha dos blocos mais a cima de todos
-						if(posB==0)
-							posA--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
-							posA--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
-							posB--;
-					}
-					if(coords[1]==0){ //coluna dos blocos mais a esquerda de todos
-						if(posA==0)
-							posB--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
-							posA--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
-							posB--;
-					}
-				}else{	//caso seja um bloco que esteja no interior da matriz de blocos
-					if(posA==0){	//caso esteja na coluna limite esquerda da matriz local
-						destinationCoords[0] = coords[0];
-						destinationCoords[1] = coords[1]-1;
-						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
-						destMatrixCoords[0]=//maxTamanho de colunas da matriz destino
-						destMatrixCoords[1]=localMatrixCoords[1];
-						MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
-						//MPI_Send(ret, ret.length(), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
-					}else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
-					posA--;
-					else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
-						posB--;
-				}
-			}
-		}// ends while loop
-	}
-
-
-	string runMatrix(int dim[2],string stringA, string stringB,int positionA, int positionB){
-	// Local variables
-	// return string
-		int id;
-		string ret;
-		MPI_Comm cart_comm;
-		MPI_Status status;
-		int coords[2];
-		int buf[2];
-		MPI_Cart_coords(cart_comm, id, 2, coords);
-	// body
-	// while the positions are in range
-		if(coords[0] == dim[0]-1 && coords[1] == dim[1]-1){
-			runLocalMatrix(stringA, stringB, positionA, positionB, cart_comm, coords, &ret);
-		}else{
-		MPI_Recv(buf,2,MPI_INT,MPI_ANY_SOURCE,MPI_ANY_TAG,MPI_COMM_WORLD,&status); //CHANGE TAG
-		runLocalMatrix(stringA, stringB, positionA, positionB, cart_comm, coords, &ret);
-	}
-	// return ret string
-	return ret;
-}*/
 
 /* MAIN: PROCESS PARAMETERS */
 	int main(int argc, char *argv[]) {
