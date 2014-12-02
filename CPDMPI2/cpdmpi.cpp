@@ -13,12 +13,15 @@ using namespace std;
 // Debug flag controllers
 #define DEBUG 0
 #define VALUE_DEBUG 0
+#define SUPER_DEBUG 0
 
 
 //GLOBAL VARIABLES
 int destinationMatrixCoordsGarbage[2] = {-1, -1};
 int garbageId;
 string pathStringGarbage = "";
+// Matrix declaration
+	int* matrix;
 	
 // Functions Definitions
 
@@ -200,7 +203,7 @@ void terminateAlgorithm(MPI_Comm cart_comm, string result){
 	cout << result << endl;
 }
 
-void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, int positionB, MPI_Comm cart_comm, int coords[2], int totalLengthA, int totalLengthB, int dim[2], string *pathString){
+void runLocalMatrix(string stringA, string stringB, int positionA, int positionB, MPI_Comm cart_comm, int coords[2], int totalLengthA, int totalLengthB, int dim[2], string *pathString, int *dependencyList){
 	int posA = positionA-1;
 	int posB = positionB-1;
 	int destinationCoords[2];
@@ -208,11 +211,16 @@ void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, 
 	int localMatrixCoords[2]; // traduzir local de um bloco para o outro
 	int destMatrixCoords[2];
 	int garbageStuff;
+	int width;
+	getTargetDimension(coords, dim, totalLengthA, totalLengthB, &width, &garbageStuff);
 	while(posA >= 0 && posB >= 0){
 		localMatrixCoords[0] = posA;
 		localMatrixCoords[1] = posB;
+		if(SUPER_DEBUG) cout << "posA: " << posA << " posB: " << posB << endl << flush;
+		if(SUPER_DEBUG) cout << "comparing " << stringA[posA] << " " << stringB[posB] << endl << flush;
 			// if the chars match decrement both positions and add the char to the ret string
 		if(stringA[posA] == stringB[posB]){
+			if(SUPER_DEBUG) cout << "match!" <<endl;
 			*pathString = stringA[posA] + *pathString;
 			if((coords[0] == 0) && (posA==0)){
 				terminateAlgorithm(cart_comm, *pathString);
@@ -222,7 +230,7 @@ void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, 
 				}
 				return;
 			}
-			if((coords[1]==0) && (posB == 0)){
+			else if((coords[1]==0) && (posB == 0)){
 				terminateAlgorithm(cart_comm, *pathString);
 				//Terminating its row
 				for(int i=0; i < coords[0]; i++){
@@ -230,7 +238,7 @@ void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, 
 				}
 				return;
 			}
-			if(posA == 0 && posB == 0){ //mandar para o bloco diagonal
+			else if(posA == 0 && posB == 0){ //mandar para o bloco diagonal
 				destinationCoords[0] = coords[0]-1;
 				destinationCoords[1] = coords[1]-1;
 				MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
@@ -249,6 +257,7 @@ void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, 
 				}
 				return;
 			}else{
+				
 				if(posA == 0){ //mandar para o bloco da esquerda na diagonal
 					destinationCoords[0] = coords[0]-1;
 					destinationCoords[1] = coords[1];
@@ -284,75 +293,211 @@ void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, 
 			}
 		  
 		}else{
+			if(SUPER_DEBUG) cout << "no match!" << endl;
 				if(coords[0]==0 && coords[1]==0){	//se estiver no bloco canto superior esquerdo
-					if(posA==0 && posB==0)
+					if(posA==0 && posB==0){
+						terminateAlgorithm(cart_comm, *pathString);
 						break;
+					}
 					else if(posA==0)
 						posB--;
 					else if(posB==0)
 						posA--;
-					else if(matrix[getIndex(posA-1,posB,positionA)] >= matrix[getIndex(posA,posB-1,positionA)])
+					else if(matrix[getIndex(posA-1,posB,positionA)] > matrix[getIndex(posA,posB-1,positionA)])
 						posA--;
-					else if(matrix[getIndex(posA-1,posB,positionA)] < matrix[getIndex(posA,posB-1,positionA)])
+					else if(matrix[getIndex(posA-1,posB,positionA)] <= matrix[getIndex(posA,posB-1,positionA)])
 						posB--;
-				}else if(coords[0]==0 || coords[1]==0){ //se estiver ou na linha ou na coluna de blocos limite
-					if(coords[0]==0){ //linha dos blocos mais a cima de todos
-						if(posB==0)
-							posA--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] >= matrix[getIndex(posA,posB-1,positionA)])
-							posA--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] < matrix[getIndex(posA,posB-1,positionA)])
-							posB--;
-					}
-					if(coords[1]==0){ //coluna dos blocos mais a esquerda de todos
-						if(posA==0)
-							posB--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] >= matrix[getIndex(posA,posB-1,positionA)])
-							posA--;
-						else if(matrix[getIndex(posA-1,posB,positionA)] < matrix[getIndex(posA,posB-1,positionA)])
-							posB--;
-					}
-				}else{	//caso seja um bloco que esteja no interior da matriz de blocos
-					if(posA==0){	//caso esteja na coluna limite esquerda da matriz local
-						destinationCoords[0] = coords[0]-1;
-						destinationCoords[1] = coords[1];
-						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
-						getTargetDimension(destinationCoords, dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &garbageStuff);
-						destMatrixCoords[1]=posB;
-						destMatrixCoords[0]--;
-						MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
-						MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
-						//Terminating its column
-						for(int i=0; i< coords[1]; i++){
-							broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, coords[0], i);
+				}else if(coords[1]==0){ //linha dos blocos mais a cima de todos
+					//cout << "upper block" << endl;
+						if(posB==0){
+							if(posA==0){
+								//SEND LEFT
+								destinationCoords[0] = coords[0]-1;
+								destinationCoords[1] = coords[1];
+								MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+								destMatrixCoords[1]=posB;
+								getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &garbageStuff);
+								destMatrixCoords[0]--;
+								MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+								MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+								//Terminating its column
+								for(int i=0; i< coords[1]; i++){
+									broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, coords[0], i);
+								}
+								return;
+							}
+							else{
+								posA--;
+							}
+						}else{
+							if(posA == 0){
+								//cout << "here" << endl;
+								//cout << "dependency list: " << width << posB << endl;
+								if(matrix[getIndex(posA,posB-1,width)] >= dependencyList[width+posB+1]){
+									//cout << "here2" << endl;
+									posB--;
+								}else{
+									//SEND LEFT
+									destinationCoords[0] = coords[0]-1;
+									destinationCoords[1] = coords[1];
+									MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+									destMatrixCoords[1]=posB;
+									getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &garbageStuff);
+									destMatrixCoords[0]--;
+									MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+									MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+									//Terminating its column
+									for(int i=0; i< coords[1]; i++){
+										broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, coords[0], i);
+									}
+									return;
+								}
+							}else{
+								if(matrix[getIndex(posA-1,posB,width)] > matrix[getIndex(posA,posB-1,width)])
+									posA--;
+								else if(matrix[getIndex(posA-1,posB,width)] <= matrix[getIndex(posA,posB-1,width)])
+									posB--;
+							}
 						}
-						return;
-					}else if(posB==0){
-						destinationCoords[0] = coords[0];
-						destinationCoords[1] = coords[1]-1;
-						MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
-						getTargetDimension(destinationCoords, dim, totalLengthA, totalLengthB, &garbageStuff, &(destMatrixCoords[1]));
-						destMatrixCoords[0]=posA;
-						destMatrixCoords[1]--;
-						MPI_Send(destMatrixCoords, 2, MPI_INT, destinationId, destinationId, MPI_COMM_WORLD); //send matrix position
-						MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
-						//Terminating its row
-						for(int i=0; i < coords[0]; i++){
-							broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, i, coords[1]);
+					}else if(coords[0]==0){ //linha dos blocos mais a esquerda de todos
+						if(posB==0){
+							if(posA==0){
+								//SEND UP
+								destinationCoords[0] = coords[0];
+								destinationCoords[1] = coords[1]-1;
+								MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+								destMatrixCoords[0]=posA;
+								getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &garbageStuff,&(destMatrixCoords[1]));
+								destMatrixCoords[1]--;
+								MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+								MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+								//Terminating its row
+								for(int i=0; i < coords[0]; i++){
+									broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, i, coords[1]);
+								}
+								return;
+							}
+							else{
+								if(matrix[getIndex(posA-1,posB,width)] > dependencyList[posA+1]){
+									posA--;
+								}
+								else{
+									//SEND UP
+									destinationCoords[0] = coords[0];
+									destinationCoords[1] = coords[1]-1;
+									MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+									destMatrixCoords[0]=posA;
+									getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &garbageStuff,&(destMatrixCoords[1]));
+									destMatrixCoords[1]--;
+									MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+									MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+									//Terminating its row
+									for(int i=0; i < coords[0]; i++){
+										broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, i, coords[1]);
+									}
+									return;
+								}
+							}
+						}else{
+							if(posA == 0){
+								posB--;
+							}else{
+								if(matrix[getIndex(posA-1,posB,width)] > matrix[getIndex(posA,posB-1,width)]){
+									posA--;
+								}else{
+									posB--;
+								}
+							}
 						}
-						return;
+					}else{
+						if(posB == 0){
+							if(posA == 0){
+								if(dependencyList[width+posB+1] > dependencyList[posA+1]){
+									//SEND LEFT
+									destinationCoords[0] = coords[0]-1;
+									destinationCoords[1] = coords[1];
+									MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+									destMatrixCoords[1]=posB;
+									getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &garbageStuff);
+									destMatrixCoords[0]--;
+									MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+									MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+									//Terminating its column
+									for(int i=0; i< coords[1]; i++){
+										broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, coords[0], i);
+									}
+									return;
+								}else{
+									//SEND UP
+									destinationCoords[0] = coords[0];
+									destinationCoords[1] = coords[1]-1;
+									MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+									destMatrixCoords[0]=posA;
+									getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &garbageStuff,&(destMatrixCoords[1]));
+									destMatrixCoords[1]--;
+									MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+									MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+									//Terminating its row
+									for(int i=0; i < coords[0]; i++){
+										broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, i, coords[1]);
+									}
+									return;
+								}
+							}else{
+								if(matrix[getIndex(posA-1,posB,width)] > dependencyList[posA+1]){
+									posA--;
+								}
+								else{
+									//SEND UP
+									destinationCoords[0] = coords[0];
+									destinationCoords[1] = coords[1]-1;
+									MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+									destMatrixCoords[0]=posA;
+									getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &garbageStuff,&(destMatrixCoords[1]));
+									destMatrixCoords[1]--;
+									MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+									MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+									//Terminating its row
+									for(int i=0; i < coords[0]; i++){
+										broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, i, coords[1]);
+									}
+									return;
+								}
+							}
+						}else{
+							if(posA == 0){
+								if(matrix[getIndex(posA,posB-1,width)] >= dependencyList[width+posB+1]){
+										posB--;
+								}else{
+									//SEND LEFT
+									destinationCoords[0] = coords[0]-1;
+									destinationCoords[1] = coords[1];
+									MPI_Cart_rank(cart_comm, destinationCoords, &destinationId);
+									destMatrixCoords[1]=posB;
+									getTargetDimension(destinationCoords , dim, totalLengthA, totalLengthB, &(destMatrixCoords[0]), &garbageStuff);
+									destMatrixCoords[0]--;
+									MPI_Send(destMatrixCoords, 2 , MPI_INT, destinationId, destinationId, MPI_COMM_WORLD);
+									MPI_Send((char*)(pathString->c_str()), min(totalLengthA,totalLengthB), MPI_CHAR, destinationId, destinationId, MPI_COMM_WORLD); //send constructed string
+									//Terminating its column
+									for(int i=0; i< coords[1]; i++){
+										broadcastTerminateProcess(cart_comm, totalLengthA, totalLengthB, coords[0], i);
+									}
+									return;
+								}
+							}else{
+								if(matrix[getIndex(posA-1,posB,width)] > matrix[getIndex(posA,posB-1,width)]){
+									posA--;
+								}else{
+									posB--;
+								}
+							}
+						}
 					}
-					else if(matrix[getIndex(posA-1,posB,positionA)] >= matrix[getIndex(posA,posB-1,positionA)])
-						posA--;
-					else if(matrix[getIndex(posA-1,posB,positionA)] < matrix[getIndex(posA,posB-1,positionA)])
-						posB--;
 				}
-			}
 		}// ends while loop
 	}
 
-
-	string runMatrix(int* matrix, int dim[2], string stringA, string stringB, int positionA, int positionB, MPI_Comm cart_comm, int totalLengthA, int totalLengthB, int* coords, int id){
+	string runMatrix(int dim[2], string stringA, string stringB, int positionA, int positionB, MPI_Comm cart_comm, int totalLengthA, int totalLengthB, int* coords, int id, int *dependencyList){
 	// Local variables
 	// return string
 		MPI_Status status;
@@ -361,13 +506,13 @@ void runLocalMatrix(int* matrix, string stringA, string stringB, int positionA, 
 	// body
 	// while the positions are in range
 		if(coords[0] == dim[0]-1 && coords[1] == dim[1]-1){
-		  runLocalMatrix(matrix, stringA, stringB, positionA, positionB, cart_comm, coords, totalLengthA, totalLengthB, dim, &pathString);
+		  runLocalMatrix(stringA, stringB, positionA, positionB, cart_comm, coords, totalLengthA, totalLengthB, dim, &pathString, dependencyList);
 		}else{
 		  MPI_Recv(buf,2,MPI_INT,MPI_ANY_SOURCE,MPI_ANY_TAG,MPI_COMM_WORLD,&status); //CHANGE TAG
 		  char pathString2[min(totalLengthA,totalLengthB)];
 		  MPI_Recv(pathString2, min(totalLengthA,totalLengthB), MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 		  pathString = string(pathString2);
-		  runLocalMatrix(matrix, stringA, stringB, buf[0]+1, buf[1]+1, cart_comm, coords, totalLengthA, totalLengthB, dim, &pathString);
+		  runLocalMatrix(stringA, stringB, buf[0]+1, buf[1]+1, cart_comm, coords, totalLengthA, totalLengthB, dim, &pathString, dependencyList);
 	}
 	// return ret string
 	return pathString;
@@ -416,9 +561,8 @@ void routineMPI(string filename, int n, int m){
 	int maxColumn = finalPositions[0] - initialPositions[0] + 1;
 	int maxRow = finalPositions[1] - initialPositions[1] + 1;
 	int dependencies = maxColumn + maxRow + 1;
-
-	// Matrix declaration
-	int* matrix;
+	int* myDependencyList;
+	
 
 	// get strings for the current block
 	readInputFile(filename, initialPositions, finalPositions, &stringA, &stringB);
@@ -427,10 +571,11 @@ void routineMPI(string filename, int n, int m){
 	if(coords[0]==0 && coords[1]==0){ // Matrix Block 0,0 - initial block
 		if(DEBUG) printCurrentProcess(coords, initialPositions, finalPositions, id);
 
-		int dependencyList[dependencies];
-		memset(dependencyList, 0, dependencies*sizeof(int));
+		myDependencyList = new int[dependencies];
+		//int dependencyList[dependencies];
+		memset(myDependencyList, 0, dependencies*sizeof(int));
 
- 		matrix = computeMatrixBlock (stringA, stringB, dependencyList);
+ 		matrix = computeMatrixBlock (stringA, stringB, myDependencyList);
 		if(VALUE_DEBUG) printMatrix(matrix, maxColumn, maxRow, id);
 
 		if(dim[0] > 1){
@@ -493,7 +638,7 @@ void routineMPI(string filename, int n, int m){
 		// is this matrix block in the first column or first row?
 		if(coords[0]==0){ // matrix block in the first column
 			int myDependencies = maxColumn + maxRow + 1;
-			int dependencyList[myDependencies];
+			myDependencyList = new int[myDependencies];
 
 			int sourceCoords[2];
 			sourceCoords[0] = coords[0];
@@ -505,14 +650,14 @@ void routineMPI(string filename, int n, int m){
 			MPI_Cart_rank(cart_comm, sourceCoords, &sourceId);
 
 			if(DEBUG) std::cout << "Process " << id << " is waiting message from process " << sourceId << " with length " << myDependencies << " and tag " << id << std::endl << std::flush;
-			MPI_Recv(dependencyList, myDependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
+			MPI_Recv(myDependencyList, myDependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
 			if(DEBUG) std::cout << "Process " << id << " received message from process " << sourceId << std::endl << std::flush;
 
-			if(VALUE_DEBUG) printDependencyList(dependencyList, myDependencies, id);
-			matrix = computeMatrixBlock (stringA, stringB, dependencyList);
+			if(VALUE_DEBUG) printDependencyList(myDependencyList, myDependencies, id);
+			matrix = computeMatrixBlock (stringA, stringB, myDependencyList);
 			if(VALUE_DEBUG) printMatrix(matrix, maxColumn, maxRow, id);
 
-			// send to bot block
+			// send to bot blockupper
 			if(coords[1] < dim[1]-1){
 				int targetBotCoords[2];
 				targetBotCoords[0] = coords[0];
@@ -564,7 +709,7 @@ void routineMPI(string filename, int n, int m){
 			}
 		} else if(coords[1]==0){ //matrix block in the first row
 			int myDependencies = maxColumn + maxRow + 1;
-			int dependencyList[myDependencies];
+			myDependencyList = new int[myDependencies];
 
 			int sourceCoords[2];
 			sourceCoords[0] = coords[0] - 1;
@@ -576,11 +721,11 @@ void routineMPI(string filename, int n, int m){
 			MPI_Cart_rank(cart_comm, sourceCoords, &sourceId);
 
 			if(DEBUG) std::cout << "Process " << id << " is waiting message from process " << sourceId << " with length " << myDependencies << " and tag " << id << std::endl << std::flush;
-			MPI_Recv(dependencyList, myDependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
+			MPI_Recv(myDependencyList, myDependencies, MPI_INT, sourceId, id, MPI_COMM_WORLD, &status);
 			if(DEBUG) std::cout << "Process " << id << " received message from process " << sourceId << std::endl << std::flush;
 
-			if(VALUE_DEBUG)printDependencyList(dependencyList, myDependencies, id);
-			matrix = computeMatrixBlock (stringA, stringB, dependencyList);
+			if(VALUE_DEBUG)printDependencyList(myDependencyList, myDependencies, id);
+			matrix = computeMatrixBlock (stringA, stringB, myDependencyList);
 			if(VALUE_DEBUG)printMatrix(matrix, maxColumn, maxRow, id);
 
 			if(coords[1] < dim[1]-1){
@@ -597,7 +742,7 @@ void routineMPI(string filename, int n, int m){
 			//create both dependency lists
 				int dependencyListBot[targetBotColumns + 1];
 
-				dependencyListBot[0] = dependencyList[myDependencies-1];
+				dependencyListBot[0] = myDependencyList[myDependencies-1];
 				for(int i = 1; i<targetBotColumns+1; i++)
 					dependencyListBot[i]=matrix[getIndex(i-1,maxRow-1, maxColumn)];
 
@@ -727,7 +872,8 @@ void routineMPI(string filename, int n, int m){
 				std::cout << matrix[getIndex(maxColumn-1, maxRow-1, maxColumn)] << std::endl;
 		}
 	}
-		string str = runMatrix(matrix, dim, stringA, stringB, maxColumn, maxRow, cart_comm, n, m, coords, id); //JUST IN CASE BLAME TEIXEIRA... IF ANY ERROR ITS PROBABLY HERE
+	//(string stringA, string stringB, int positionA, int positionB){
+		string str = runMatrix(dim, stringA, stringB, maxColumn, maxRow, cart_comm, n, m, coords, id, myDependencyList); //JUST IN CASE BLAME TEIXEIRA... IF ANY ERROR ITS PROBABLY HERE
 		/*if(coords[0]==0 && coords[1]==0){
 			cout<<str<<endl;
 		}*/
