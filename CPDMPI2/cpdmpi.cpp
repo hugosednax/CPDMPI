@@ -886,6 +886,7 @@ void routineMPI(string filename, int n, int m){
 	int main(int argc, char *argv[]) {
 	//omp_set_num_threads(8);
 
+		MPI_Init(&argc,&argv);
 		string filename = argv[1];
 		int n, m;
 
@@ -895,7 +896,6 @@ void routineMPI(string filename, int n, int m){
 		infile >> n >> m;
 		infile.close();
 
-		MPI_Init(&argc,&argv);
 		routineMPI(filename, n, m);
 		MPI_Finalize();
 	//
