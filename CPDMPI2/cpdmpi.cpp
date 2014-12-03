@@ -445,6 +445,9 @@ void runLocalMatrix(string stringA, string stringB, int positionA, int positionB
 								}
 							}else{
 								if(matrix[getIndex(posA-1,posB,width)] > dependencyList[posA+1]){
+									/*cout << "here " << matrix[getIndex(posA-1,posB,width)] << " " << dependencyList[posA+1] << endl;
+									cout << "here 2 " << getIndex(posA-1,posB,width) << " " << posA+1 << endl;
+									printDependencyList(dependencyList, 5, 3);*/
 									posA--;
 								}
 								else{
@@ -782,7 +785,7 @@ void routineMPI(string filename, int n, int m){
 
 		} else{
 			int myDependencies = maxColumn + maxRow + 1;
-			int myDependencyList[myDependencies];
+			myDependencyList = new int[myDependencies];
 
 			int sourceCoordsTop[2];
 			int sourceCoordsSide[2];
